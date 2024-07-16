@@ -1,39 +1,60 @@
 #!/usr/bin/python3
-"""
-Log parsing
-"""
-
 import sys
+import signal
 
-if __name__ == '__main__':
+# Initialize metrics
+total_size = 0
+status_counts = {
+    "200": 0,
+    "301": 0,
+    "400": 0,
+    "401": 0,
+    "403": 0,
+    "404": 0,
+    "405": 0,
+    "500": 0
+}
 
-    filesize, count = 0, 0
-    codes = ["200", "301", "400", "401", "403", "404", "405", "500"]
-    stats = {k: 0 for k in codes}
+line_count = 0
 
-    def print_stats(stats: dict, file_size: int) -> None:
-        print("File size: {:d}".format(filesize))
-        for k, v in sorted(stats.items()):
-            if v:
-                print("{}: {}".format(k, v))
+def print_stats():
+    """Print the current statistics."""
+    print(f"File size: {total_size}")
+    for status_code in sorted(status_counts.keys()):
+        if status_counts[status_code] > 0:
+            print(f"{status_code}: {status_counts[status_code]}")
 
-    try:
-        for line in sys.stdin:
-            count += 1
-            data = line.split()
-            try:
-                status_code = data[-2]
-                if status_code in stats:
-                    stats[status_code] += 1
-            except BaseException:
-                pass
-            try:
-                filesize += int(data[-1])
-            except BaseException:
-                pass
-            if count % 10 == 0:
-                print_stats(stats, filesize)
-        print_stats(stats, filesize)
-    except KeyboardInterrupt:
-        print_stats(stats, filesize)
-        raise
+def signal_handler(sig, frame):
+    """Handle the CTRL+C signal to print stats."""
+    print_stats()
+    sys.exit(0)
+
+# Register the signal handler
+signal.signal(signal.SIGINT, signal_handler)
+
+try:
+    for line in sys.stdin:
+        # Check if the line matches the expected format
+        parts = line.split()
+        if len(parts) != 9:
+            continue
+        ip, _, _, date, _, request, _, status_code, file_size = parts
+        if request != '"GET /projects/260 HTTP/1.1"':
+            continue
+        if not status_code.isdigit() or not file_size.isdigit():
+            continue
+
+        # Update metrics
+        total_size += int(file_size)
+        if status_code in status_counts:
+            status_counts[status_code] += 1
+
+        line_count += 1
+
+        # Print stats after every 10 lines
+        if line_count % 10 == 0:
+            print_stats()
+
+except KeyboardInterrupt:
+    print_stats()
+    sys.exit(0)
